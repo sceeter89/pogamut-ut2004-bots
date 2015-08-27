@@ -1,9 +1,12 @@
 package com.gamedesire.ut2004.manhunter;
 
 import cz.cuni.amis.introspection.java.JProp;
+import cz.cuni.amis.pogamut.base.agent.module.comm.PogamutJVMComm;
 import cz.cuni.amis.pogamut.base.agent.navigation.IPathExecutorState;
 import cz.cuni.amis.pogamut.base.communication.worldview.listener.annotation.EventListener;
 import cz.cuni.amis.pogamut.base.utils.guice.AgentScoped;
+import cz.cuni.amis.pogamut.base3d.worldview.object.Location;
+import cz.cuni.amis.pogamut.unreal.communication.messages.UnrealId;
 import cz.cuni.amis.pogamut.ut2004.agent.module.utils.TabooSet;
 import cz.cuni.amis.pogamut.ut2004.agent.navigation.IUT2004Navigation;
 import cz.cuni.amis.pogamut.ut2004.agent.navigation.UT2004Navigation;
@@ -20,6 +23,7 @@ import java.util.logging.Level;
 
 @AgentScoped
 public class ManHunter extends UT2004BotModuleController {
+    private static final int COMM_CHANNEL = 1;
     // Navigation-related fields
 
     protected TabooSet<NavPoint> _tabooNavPoints;
@@ -37,10 +41,12 @@ public class ManHunter extends UT2004BotModuleController {
         Idle, Gathering, Waiting, Seeking, Hunting, EnemyKilled
     }
     private State _currentState = State.Idle;
+    private Location _gatherPointLocation = null;
+    private UnrealId _targetId = null;
 
     @Override
     public Initialize getInitializeCommand() {
-        return new Initialize().setName("NavigationBot");
+        return new Initialize();//.setName("NavigationBot");
     }
 
     @Override
@@ -87,22 +93,45 @@ public class ManHunter extends UT2004BotModuleController {
         //navigation.getPathExecutor().getLog().setLevel(Level.ALL);
         //nmNav.setLogLevel(Level.ALL);
         //navigationAStar.getPathExecutor().getLog().setLevel(Level.ALL);
+        
+        PogamutJVMComm.getInstance().registerAgent(bot, COMM_CHANNEL);  
     }
 
     @Override
     public void beforeFirstLogic() {
     }
 
+    private Player getEnemyInView() {
+        for (Player player : players.getVisiblePlayers().values()) {
+            if (player.getName().startsWith("ManHunter") == false) {
+                return player;
+            }
+        }
+
+        return null;
+    }
+
     @Override
     public void logic() {
         info.getBotName().setInfo("Status", _currentState.toString());
-
         chooseNavigationToUse();
+
+        switch (_currentState) {
+            case Idle:
+                Player newEnemy = getEnemyInView();
+                if (newEnemy == null) {
+                    handleNavPointNavigation();
+                } else {
+                    _navigationToUse.navigate(newEnemy);
+                    PogamutJVMComm.getInstance().sendToOthers(new NewGameStart(newEnemy.getId(), newEnemy.getLocation()), COMM_CHANNEL, bot);
+                }
+                break;
+
+        }
 
         if (players.canSeePlayers() || _navigationToUse.getCurrentTargetPlayer() != null) {
             handlePlayerNavigation();
         } else {
-            handleNavPointNavigation();
         }
     }
 
@@ -256,6 +285,11 @@ public class ManHunter extends UT2004BotModuleController {
         }
 
         _navigationToUse.navigate(event.getEnemyLocation());
+    }    
+    
+    @Override
+    public void botShutdown() {
+    	 PogamutJVMComm.getInstance().unregisterAgent(bot); 
     }
 
     public static void main(String args[]) throws PogamutException {
