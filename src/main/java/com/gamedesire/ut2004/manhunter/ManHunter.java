@@ -38,9 +38,9 @@ public class ManHunter extends UT2004BotModuleController {
 
     // Bot's state machine
     private enum State {
-
-        Idle, Gathering, Waiting, Seeking, Hunting, EnemyKilled
+        Idle, Gathering, Waiting, CountDown, Seeking, Exterminating
     }
+    
     private State _currentState = State.Idle;
     private Location _gatherPointLocation = null;
     private UnrealId _targetId = null;
@@ -90,11 +90,6 @@ public class ManHunter extends UT2004BotModuleController {
 
     @Override
     public void botFirstSpawn(GameInfo gameInfo, ConfigChange config, InitedMessage init, Self self) {
-        // receive logs from the navigation so you can get a grasp on how it is working
-        //navigation.getPathExecutor().getLog().setLevel(Level.ALL);
-        //nmNav.setLogLevel(Level.ALL);
-        //navigationAStar.getPathExecutor().getLog().setLevel(Level.ALL);
-
         PogamutJVMComm.getInstance().registerAgent(bot, COMM_CHANNEL);
     }
 
@@ -137,6 +132,7 @@ public class ManHunter extends UT2004BotModuleController {
     }
     private final static double TARGET_LOOKUP_INTERVAL_SECONDS = 0.5d;
     private double _lastTargetLookupRequest = 0;
+    private double _startTime = 0;
 
     @Override
     public void logic() {
@@ -195,6 +191,35 @@ public class ManHunter extends UT2004BotModuleController {
                 if (players.getVisiblePlayers().containsKey(_targetId) == false) {
                     resetToIdle();
                 }
+                if (bot.getName().equals("ManHunter1")) {
+                    boolean all_ready = true;
+                    for (Player player : players.getPlayers().values()) {
+                        if (player.getName().startsWith("ManHunter") && player.getName().contains("Waiting") == false) {
+                            all_ready = false;
+                        }
+                    }
+                    if (all_ready) {
+                        body.getCommunication().sendGlobalTextMessage("We're all ready! You have 10 seconds to escape. Run!");
+                        _currentState = State.CountDown;
+                        _startTime = game.getTime() + 10;
+                    }
+                }
+                break;
+            case CountDown:
+                int secondsLeft = (int) (_startTime - game.getTime());
+                if (secondsLeft <= 3 && secondsLeft > 0) {
+                    body.getCommunication().sendGlobalTextMessage(Integer.toString(secondsLeft) + "...");
+                }
+                if (secondsLeft <= 0) {
+                    body.getCommunication().sendGlobalTextMessage("START!");
+                    body.getCommunication().sendGlobalTextMessage("Prepare to die " + players.getPlayerName(_targetId, true) + "!");
+                    PogamutJVMComm.getInstance().sendToOthers(new StartGame(), COMM_CHANNEL, bot);
+                    _currentState = State.Seeking;
+                }
+                break;
+            case Seeking:
+
+                handleNavPointNavigation();
                 break;
         }
     }
@@ -304,6 +329,16 @@ public class ManHunter extends UT2004BotModuleController {
         }
 
         PogamutJVMComm.getInstance().sendToOthers(new NewGameStart(_targetId, _gatherPointLocation), COMM_CHANNEL, bot);
+    }
+
+    //Communication handling
+    @EventListener(eventClass = DoesAnyoneSeeTarget.class)
+    public void newGameHasStarted(DoesAnyoneSeeTarget event) {
+        if (_currentState != State.Waiting) {
+            return;
+        }
+
+        _currentState = State.Seeking;
     }
 
     @Override
