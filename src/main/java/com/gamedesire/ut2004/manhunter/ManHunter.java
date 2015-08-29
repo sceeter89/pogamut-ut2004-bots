@@ -23,8 +23,8 @@ import java.util.logging.Level;
 
 @AgentScoped
 public class ManHunter extends UT2004BotModuleController {
-    public static final double GATHER_POINT_DISTANCE = 4 * UT2004Navigation.AT_PLAYER;
 
+    public static final double GATHER_POINT_DISTANCE = 4 * UT2004Navigation.AT_PLAYER;
     private static final int COMM_CHANNEL = 1;
     // Navigation-related fields
     protected TabooSet<NavPoint> _tabooNavPoints;
@@ -135,6 +135,8 @@ public class ManHunter extends UT2004BotModuleController {
         _gatherPointLocation = enemy.getLocation();
         PogamutJVMComm.getInstance().sendToOthers(new NewGameStart(enemy.getId(), enemy.getLocation()), COMM_CHANNEL, bot);
     }
+    private final static double TARGET_LOOKUP_INTERVAL_SECONDS = 0.5d;
+    private double _lastTargetLookupRequest = 0;
 
     @Override
     public void logic() {
@@ -154,12 +156,20 @@ public class ManHunter extends UT2004BotModuleController {
                 Player newEnemy = getEnemyInView();
                 if (newEnemy == null) {
                     handleNavPointNavigation();
+                    double currentTime = game.getTime();
+                    if (currentTime - _lastTargetLookupRequest > TARGET_LOOKUP_INTERVAL_SECONDS) {
+                        PogamutJVMComm.getInstance().sendToOthers(new DoesAnyoneSeeTarget(), COMM_CHANNEL, bot);
+                        _lastTargetLookupRequest = currentTime;
+                    }
                 } else {
                     gatherAtNewEnemy(newEnemy);
                 }
                 break;
             case Gathering:
                 if (info.getLocation().getDistance(_gatherPointLocation) < GATHER_POINT_DISTANCE) {
+                    if (players.getVisiblePlayers().containsKey(_targetId) == false) {
+                        resetToIdle();
+                    }
                     _navigationToUse.stopNavigation();
                     _currentState = State.Waiting;
                     return;
@@ -276,12 +286,24 @@ public class ManHunter extends UT2004BotModuleController {
     public void newGameStartReceived(NewGameStart event) {
         if (_currentState == State.Idle) {
             _gatherPointLocation = event.getEnemyLocation();
+            _targetId = event.getEnemyId();
             _currentState = State.Gathering;
             return;
         }
         if (_currentState == State.Gathering) {
             _gatherPointLocation = event.getEnemyLocation();
+            _targetId = event.getEnemyId();
         }
+    }
+
+    //Communication handling
+    @EventListener(eventClass = DoesAnyoneSeeTarget.class)
+    public void targetLookupRequestReceived(DoesAnyoneSeeTarget event) {
+        if (_currentState != State.Waiting) {
+            return;
+        }
+
+        PogamutJVMComm.getInstance().sendToOthers(new NewGameStart(_targetId, _gatherPointLocation), COMM_CHANNEL, bot);
     }
 
     @Override
