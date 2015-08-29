@@ -23,6 +23,7 @@ import java.util.logging.Level;
 
 @AgentScoped
 public class ManHunter extends UT2004BotModuleController {
+    public static final double GATHER_POINT_DISTANCE = 4 * UT2004Navigation.AT_PLAYER;
 
     private static final int COMM_CHANNEL = 1;
     // Navigation-related fields
@@ -112,6 +113,10 @@ public class ManHunter extends UT2004BotModuleController {
     }
 
     private void resetToIdle() {
+        if (_navigationToUse == null) {
+            return;
+        }
+
         _targetId = null;
         if (_navigationToUse.isNavigating()) {
             _navigationToUse.stopNavigation();
@@ -136,6 +141,14 @@ public class ManHunter extends UT2004BotModuleController {
         info.getBotName().setInfo("State", _currentState.toString());
         chooseNavigationToUse();
 
+        if (_navigationToUse == null) {
+            return;
+        }
+        if (_currentState != State.Idle && players.getPlayers().containsKey(_targetId) == false) {
+            resetToIdle();
+            return;
+        }
+
         switch (_currentState) {
             case Idle:
                 Player newEnemy = getEnemyInView();
@@ -146,28 +159,32 @@ public class ManHunter extends UT2004BotModuleController {
                 }
                 break;
             case Gathering:
-                if (players.getPlayers().containsKey(_targetId) == false) {
-                    resetToIdle();
+                if (info.getLocation().getDistance(_gatherPointLocation) < GATHER_POINT_DISTANCE) {
+                    _navigationToUse.stopNavigation();
+                    _currentState = State.Waiting;
                     return;
                 }
-
                 if (_navigationToUse.isNavigating() && _navigationToUse.getCurrentTarget().equals(_gatherPointLocation) == false) {
                     _navigationToUse.stopNavigation();
                 }
                 if (_navigationToUse.isNavigating() == false && _gatherPointLocation != null) {
-                    _navigationToUse.navigate(players.getPlayer(_targetId));
+                    _navigationToUse.navigate(_gatherPointLocation);
                 }
                 if (_navigationToUse.isNavigating() == false) {
                     log.warning("Current gather point location is null. Switching to Idle.");
                     resetToIdle();
                 }
-                if (info.getLocation().getDistance(_gatherPointLocation) < UT2004Navigation.AT_PLAYER) {
-                    _navigationToUse.stopNavigation();
-                    _currentState = State.Waiting;
-                }
                 break;
             case Waiting:
-
+                move.turnTo(players.getPlayer(_targetId));
+                if (info.getLocation().getDistance(players.getPlayer(_targetId).getLocation()) >= GATHER_POINT_DISTANCE) {
+                    _gatherPointLocation = players.getPlayer(_targetId).getLocation();
+                    _currentState = State.Gathering;
+                    return;
+                }
+                if (players.getVisiblePlayers().containsKey(_targetId) == false) {
+                    resetToIdle();
+                }
                 break;
         }
     }
@@ -192,48 +209,14 @@ public class ManHunter extends UT2004BotModuleController {
         }
     }
 
-    private void handlePlayerNavigation() {
-        if (_navigationToUse.isNavigating() && _navigationToUse.getCurrentTargetPlayer() != null) {
-            return;
-        }
-
-        // NAVIGATION HAS STOPPED ... 
-        // => we need to choose another player to navigate to
-
-        Player player = players.getNearestVisiblePlayer();
-        if (player == null) {
-            // NO PLAYERS AT SIGHT
-            // => navigate to random navpoint
-            handleNavPointNavigation();
-            return;
-        }
-
-        // CHECK DISTANCE TO THE PLAYER ...
-        if (info.getLocation().getDistance(player.getLocation()) < UT2004Navigation.AT_PLAYER) {
-            // PLAYER IS NEXT TO US... 
-            // => talk to player	
-            return;
-        }
-
-        _navigationToUse.navigate(player);
-    }
-
     private void handleNavPointNavigation() {
         if (_navigationToUse.isNavigatingToNavPoint()) {
-            // IS TARGET CLOSE & NEXT TARGET NOT SPECIFIED?
             while (_navigationToUse.getContinueTo() == null && _navigationToUse.getRemainingDistance() < 400) {
-                // YES, THERE IS NO "next-target" SET AND WE'RE ABOUT TO REACH OUR TARGET!
                 NavPoint nextNavPoint = getRandomNavPoint();
                 _navigationToUse.setContinueTo(nextNavPoint);
-                // note that it is WHILE because navigation may immediately eat up "next target" and next target may be actually still too close!
             }
-
             return;
         }
-
-        // NAVIGATION HAS STOPPED ... 
-        // => we need to choose another navpoint to navigate to
-        // => possibly follow some players ...
 
         _targetNavPoint = getRandomNavPoint();
         if (_targetNavPoint == null) {
@@ -245,29 +228,15 @@ public class ManHunter extends UT2004BotModuleController {
             return;
         }
 
-
         _navigationToUse.navigate(_targetNavPoint);
     }
 
-    /**
-     * Called each time our bot die. Good for reseting all bot state dependent
-     * variables.
-     *
-     * @param event
-     */
     @Override
     public void botKilled(BotKilled event) {
         navigation.stopNavigation();
         resetToIdle();
     }
 
-    /**
-     * Path executor has changed its state (note that {@link UT2004BotModuleController#getPathExecutor()}
-     * is internally used by
-     * {@link UT2004BotModuleController#getNavigation()} as well!).
-     *
-     * @param event
-     */
     protected void pathExecutorStateChange(IPathExecutorState event) {
         switch (event.getState()) {
             case PATH_COMPUTATION_FAILED:
@@ -290,11 +259,6 @@ public class ManHunter extends UT2004BotModuleController {
         }
     }
 
-    /**
-     * Randomly picks some navigation point to head to.
-     *
-     * @return randomly choosed navpoint
-     */
     protected NavPoint getRandomNavPoint() {
         NavPoint chosen = MyCollections.getRandomFiltered(getWorldView().getAll(NavPoint.class).values(), _tabooNavPoints);
 
@@ -309,24 +273,15 @@ public class ManHunter extends UT2004BotModuleController {
 
     //Communication handling
     @EventListener(eventClass = NewGameStart.class)
-    public void newEnemySpotted(NewGameStart event) {
-        if (_navigationToUse == null) {
+    public void newGameStartReceived(NewGameStart event) {
+        if (_currentState == State.Idle) {
+            _gatherPointLocation = event.getEnemyLocation();
+            _currentState = State.Gathering;
             return;
         }
-
-        if (_currentState.equals(State.Idle) == false && _currentState.equals(State.Gathering) == false) {
-            return;
+        if (_currentState == State.Gathering) {
+            _gatherPointLocation = event.getEnemyLocation();
         }
-
-        if (players.getPlayers().containsKey(event.getEnemyId()) == false) {
-            return;
-        }
-
-        if (_navigationToUse.isNavigating()) {
-            _navigationToUse.stopNavigation();
-        }
-        _gatherPointLocation = event.getEnemyLocation();
-        _currentState = State.Gathering;
     }
 
     @Override
