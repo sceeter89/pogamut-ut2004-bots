@@ -1,25 +1,16 @@
 package com.gamedesire.ut2004.manhunter;
 
 import cz.cuni.amis.pogamut.base.agent.module.comm.CommEvent;
-import cz.cuni.amis.pogamut.base3d.worldview.object.Location;
-import cz.cuni.amis.pogamut.unreal.communication.messages.UnrealId;
+import cz.cuni.amis.pogamut.ut2004.communication.messages.gbinfomessages.Player;
 
 public class NewGameStart extends CommEvent {
+	private Player _enemy;
 	
-	private UnrealId enemyId;
-	
-	private Location enemyLocation;
-
-	public NewGameStart(UnrealId enemyId, Location enemyLocation) {
-		this.enemyId = enemyId;
-		this.enemyLocation = enemyLocation;
+	public NewGameStart(Player enemy) {
+		_enemy = enemy;
 	}
 
-	public UnrealId getEnemyId() {
-		return this.enemyId;
+	public Player getEnemy() {
+		return _enemy;
 	}
-
-	public Location getEnemyLocation() {
-		return this.enemyLocation;
-	}	
 }
