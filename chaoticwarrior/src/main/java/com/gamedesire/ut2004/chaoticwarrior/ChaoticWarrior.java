@@ -168,12 +168,12 @@ public class ChaoticWarrior extends UT2004BotModuleController<UT2004Bot> {
 
     @EventListener(eventClass = PlayerDamaged.class)
     public void playerDamaged(PlayerDamaged event) {
-        log.info("I have just hurt other bot for: " + event.getDamageType() + "[" + event.getDamage() + "]");
+        log.log(Level.INFO, "I have just hurt other bot for: {0}[{1}]", new Object[]{event.getDamageType(), event.getDamage()});
     }
 
     @EventListener(eventClass = BotDamaged.class)
     public void botDamaged(BotDamaged event) {
-        log.info("I have just been hurt by other bot for: " + event.getDamageType() + "[" + event.getDamage() + "]");
+        log.log(Level.INFO, "I have just been hurt by other bot for: {0}[{1}]", new Object[]{event.getDamageType(), event.getDamage()});
     }
 
     /**
@@ -338,14 +338,14 @@ public class ChaoticWarrior extends UT2004BotModuleController<UT2004Bot> {
     //////////////////
     protected void stateMedKit() {
         //log.info("Decision is: MEDKIT");
-        Item item = items.getPathNearestSpawnedItem(ItemType.Category.HEALTH);
-        if (item == null) {
+        Item newItem = items.getPathNearestSpawnedItem(ItemType.Category.HEALTH);
+        if (newItem == null) {
             log.warning("NO HEALTH ITEM TO RUN TO => ITEMS");
             stateRunAroundItems();
         } else {
             bot.getBotName().setInfo("MEDKIT");
-            navigation.navigate(item);
-            this.item = item;
+            navigation.navigate(newItem);
+            this.item = newItem;
         }
     }
     ////////////////////////////
@@ -379,8 +379,8 @@ public class ChaoticWarrior extends UT2004BotModuleController<UT2004Bot> {
             interesting.addAll(items.getSpawnedItems(UT2004ItemType.HEALTH_PACK).values());
         }
 
-        Item item = MyCollections.getRandom(tabooItems.filter(interesting));
-        if (item == null) {
+        Item newItem = MyCollections.getRandom(tabooItems.filter(interesting));
+        if (newItem == null) {
             log.warning("NO ITEM TO RUN FOR!");
             if (navigation.isNavigating()) {
                 return;
@@ -388,10 +388,10 @@ public class ChaoticWarrior extends UT2004BotModuleController<UT2004Bot> {
             bot.getBotName().setInfo("RANDOM NAV");
             navigation.navigate(navPoints.getRandomNavPoint());
         } else {
-            this.item = item;
-            log.info("RUNNING FOR: " + item.getType().getName());
-            bot.getBotName().setInfo("ITEM: " + item.getType().getName() + "");
-            navigation.navigate(item);
+            this.item = newItem;
+            log.log(Level.INFO, "RUNNING FOR: {0}", newItem.getType().getName());
+            bot.getBotName().setInfo("ITEM: " + newItem.getType().getName() + "");
+            navigation.navigate(newItem);
         }
     }
 
