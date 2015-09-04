@@ -6,7 +6,6 @@ import cz.cuni.amis.pogamut.base.agent.navigation.IPathExecutorState;
 import cz.cuni.amis.pogamut.base.communication.worldview.listener.annotation.EventListener;
 import cz.cuni.amis.pogamut.base.utils.guice.AgentScoped;
 import cz.cuni.amis.pogamut.base3d.worldview.object.Location;
-import cz.cuni.amis.pogamut.unreal.communication.messages.UnrealId;
 import cz.cuni.amis.pogamut.ut2004.agent.module.utils.TabooSet;
 import cz.cuni.amis.pogamut.ut2004.agent.navigation.*;
 import cz.cuni.amis.pogamut.ut2004.bot.impl.UT2004Bot;
@@ -46,6 +45,16 @@ public class ManHunter extends UT2004BotModuleController {
     private Item item = null;
     private TabooSet<Item> tabooItems = null;
     private Location _recentlySeenLocation = null;
+
+    private boolean areAllBotsReady() {
+        boolean all_ready = true;
+        for (Player player : players.getPlayers().values()) {
+            if (player.getName().startsWith("ManHunter") && player.getName().contains("Waiting") == false) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     // Bot's state machine
     private enum State {
@@ -260,12 +269,7 @@ public class ManHunter extends UT2004BotModuleController {
                     resetToIdle();
                 }
                 if (bot.getName().equals("ManHunter1")) {
-                    boolean all_ready = true;
-                    for (Player player : players.getPlayers().values()) {
-                        if (player.getName().startsWith("ManHunter") && player.getName().contains("Waiting") == false) {
-                            all_ready = false;
-                        }
-                    }
+                    boolean all_ready = areAllBotsReady();
                     if (all_ready) {
                         body.getCommunication().sendGlobalTextMessage("We're all ready! You have 10 seconds to escape. Run!");
                         _currentState = State.CountDown;
@@ -278,6 +282,8 @@ public class ManHunter extends UT2004BotModuleController {
                 if (bot.getName().equals("ManHunter1") == false) {
                     return;
                 }
+                if (!areAllBotsReady())
+                    PogamutJVMComm.getInstance().sendToOthers(new NewGameStart(null), COMM_CHANNEL, bot);
                 int secondsLeft = (int) (_startTime - game.getTime());
                 if (secondsLeft <= 3 && secondsLeft > 0) {
                     body.getCommunication().sendGlobalTextMessage(Integer.toString(secondsLeft) + "...");
@@ -413,6 +419,9 @@ public class ManHunter extends UT2004BotModuleController {
         if (_currentState == State.Gathering) {
             _target = event.getEnemy();
             _gatherPointLocation = _target.getLocation();
+        }
+        if(_currentState == State.CountDown){
+            resetToIdle();
         }
     }
 
